@@ -1,0 +1,10 @@
+[
+  {"id":"bootstrap-render","query":"How is the universal development bootstrap parsed, rendered, and validated?","expected_files":["scripts/dev_spec_contract.py"]},
+  {"id":"codex-gate","query":"How does Codex SessionStart choose live slot context, local degradation, or fail-closed behavior?","expected_files":["scripts/codex_session_gate.py"]},
+  {"id":"installer-preservation","query":"How does installation preserve existing Codex hooks and select AGENTS.override.md?","expected_files":["scripts/install_dev_spec_bootstrap.py","scripts/dev_spec_contract.py"]},
+  {"id":"live-verification","query":"How does verification distinguish static configuration from live slot and memory checks?","expected_files":["scripts/verify_dev_spec_bootstrap.py"]},
+  {"id":"watchdog-ownership","query":"How does the watchdog verify process ownership before recovery?","expected_files":["scripts/agentmemory-watchdog.sh"]},
+  {"id":"viewer-patching","query":"How are the AgentMemory viewer and dashboard summary patches kept idempotent?","expected_files":["scripts/patch_agentmemory_viewer.py","scripts/patch_agentmemory_dashboard_summary.py"]},
+  {"id":"session-summary","query":"How does the sessions summary patch avoid returning the full observation history?","expected_files":["scripts/patch_agentmemory_sessions_summary.py"]},
+  {"id":"authority-sync","query":"Which repository components synchronize the authority file, global slot, agent guidance, and verification report?","expected_files":["scripts/install_dev_spec_bootstrap.py","scripts/verify_dev_spec_bootstrap.py"]}
+]

@@ -1,6 +1,6 @@
 ---
 name: setup-dev-spec-memory
-description: Installs and repairs a deterministic global AI development specification bootstrap across agentmemory and supported coding agents. Use when setting up or migrating a development environment, synchronizing an updated AI development spec, or fixing new development sessions that skip universal rules, select the wrong worktree or branch, use the wrong port, or fail to load the global bootstrap slot.
+description: Use when setting up, migrating, synchronizing, or repairing the global development bootstrap; when sessions skip universal rules or select the wrong worktree, branch, or port; or when installing, verifying, benchmarking, repairing, or removing this repository's optional CodeGraph integration.
 ---
 
 # Setup Development Spec Memory
@@ -64,6 +64,24 @@ Before starting, editing, testing, reviewing, building, deploying, or using Git:
 3. Verify `pwd`, Git root, `git worktree list --porcelain`, current branch,
    `git status --short --branch`, standard project port, listener, and target URL.
 4. Only then recall project/worktree/branch memory and begin project work.
+
+## Optional CodeGraph workflow
+
+Run this workflow only when the user asks to install, verify, benchmark, repair,
+or remove the optional CodeGraph integration. The universal bootstrap and actual
+workspace checks above always run first.
+
+CodeGraph supplies current symbols, callers, flows, and impact. agentmemory
+supplies historical decisions and sessions. Keep them separate, verify graph
+claims against source and tests before edits, and fall back to `rg` and language
+tools when the graph is unavailable or stale. A CodeGraph or bridge failure is
+never a development blocker and never changes SessionStart acceptance.
+
+Use `scripts/install_codegraph_runtime.py`, `scripts/verify_codegraph_runtime.py`,
+and `scripts/codegraph_pilot.py` for the first-stage runtime pilot. Keep every
+event off until the pilot passes; then enable only `commit` unless the user
+separately approves another event. Removal disables hooks and MCP without
+deleting existing indexes or digest memories.
 
 ## Anti-patterns
 

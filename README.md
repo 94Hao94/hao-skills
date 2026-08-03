@@ -109,6 +109,64 @@ git status --short --branch
 
 并在启动服务或评审页面前核对项目声明的标准端口、实际监听端口和目标 URL。
 
+## CodeGraph optional runtime
+
+CodeGraph 是可选的当前代码结构 MCP，不属于 `ai_dev_spec_bootstrap`、SessionStart 或开发门槛。agentmemory 继续保存历史决策、会话和经验；两者不共享数据库，也没有统一检索层。CodeGraph 不可用时回退到 `rg`、语言工具、源码和测试，不能阻止正常开发。
+
+## Pilot install
+
+仅使用锁定的 `@colbymchenry/codegraph@1.5.0`，先确认 npm `gitHead` 与 integrity，再为明确的试点仓库建立本地索引。安装器默认只预览：
+
+```bash
+python3 scripts/install_codegraph_runtime.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory --dry-run
+python3 scripts/install_codegraph_runtime.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory --apply
+python3 scripts/install_codegraph_bridge.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory --events none --apply
+python3 scripts/verify_codegraph_runtime.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory
+```
+
+用 `scripts/codegraph_pilot.py` 执行八个固定问题的只读配对测试。只有 token 中位数或到达首个正确文件的时间至少改善 20%、准确率不下降且错误图边未导致修改，才允许进入 commit bridge 试点。
+
+## Routing
+
+- 当前符号、调用方、流程和影响：最多一次窄范围 `codegraph_explore`，`maxFiles <= 6`；保留最多 25 个符号和 30 条关系。
+- 历史决策、会话、偏好和经验：agentmemory。
+- 混合问题：两边各查询一次，分别标注“当前结构”和“历史原因”。
+- 修改前必须回到源码和测试核验；CodeGraph 结果不是代码事实的最终权威。
+
+## Restrained event bridge
+
+`codegraph-agentmemory.json` 独立控制 `commit`、`task_completed` 和 `architecture_decision`，默认全部关闭。桥只保存最大 12 KiB 的 `codegraph-impact-digest/v1`，不保存源码、patch 或原始图边。三次连续图操作失败会熔断 15 分钟；CodeGraph、hook 或 agentmemory 写入失败均 fail-open。
+
+首轮验收后只启用 commit：
+
+```bash
+python3 scripts/install_codegraph_bridge.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory \
+  --events commit --dry-run
+```
+
+`task_completed` 和 `architecture_decision` 保持关闭，后续启用需要独立确认。
+
+## Privacy
+
+MCP 与桥接进程设置 `CODEGRAPH_TELEMETRY=0` 和 `CODEGRAPH_NO_UPDATE_CHECK=1`。索引只存于仓库忽略的 `.codegraph/`；桥接拒绝 `.env`、绝对/越界路径、PEM、bearer 和常见 secret key 形态。原始 pilot JSONL 仅保存在本地 cache，摘要不包含 prompt、源码正文或环境值。
+
+## Rollback
+
+回滚不删除数据：
+
+```bash
+codex mcp remove codegraph
+python3 scripts/install_codegraph_bridge.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory --events none --apply
+```
+
+既有 digest 记忆继续保留其 schema 和 provenance。删除这些记忆需要另行明确提出并确认目标，不能作为回滚的一部分自动执行。
+
 ## Agent 支持
 
 | Agent | 机制 |

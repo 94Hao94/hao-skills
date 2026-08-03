@@ -166,3 +166,78 @@ python3 /Users/zouhao/.codex/skills/.system/skill-creator/scripts/quick_validate
 
 The verifier reports check names and paths only. It does not print API keys,
 bearer secrets, or full environment contents.
+
+## Optional CodeGraph runtime
+
+| Item | Required value |
+|------|----------------|
+| npm package | `@colbymchenry/codegraph@1.5.0` |
+| npm git head | `ea72e1b190921232aa7bd02e96bef5bbe4fe0ab6` |
+| npm integrity | `sha512-/l1JMVOQ9WGQLrc/IIuAg7Igr944t79/oNCJTcnGkYtIeQx2XFIqI0ho+9Les/Yu4zKfmPU17hIUshD6yP1fKw==` |
+| Codex MCP name | `codegraph` |
+| MCP command | `/absolute/path/codegraph serve --mcp` |
+| Exposed pilot tool | `codegraph_explore` |
+| Pilot repository | `/Users/zouhao/skills/setup-dev-spec-memory` |
+| agentmemory project | `94Hao94/setup-dev-spec-memory` |
+
+The MCP environment is exactly `CODEGRAPH_TELEMETRY=0`, `CODEGRAPH_NO_UPDATE_CHECK=1`, and `CODEGRAPH_MCP_TOOLS=explore`. CodeGraph is a separate stdio server and never enters the universal development gate.
+
+Healthy `codegraph status --json <repo>` requires `initialized=true`, version `1.5.0`, the canonical `projectPath`, no `worktreeMismatch`, `index.state=complete`, `pendingRefs=0`, `reindexRecommended=false`, `journalMode=wal`, a non-null `lastIndexed`, and zero added/modified/removed `pendingChanges`.
+
+## CodeGraph integration config
+
+`codegraph-agentmemory.json` uses schema `codegraph-agentmemory-config/v1`. It contains a stable project ID, exact CodeGraph version, independent event switches, and digest limits. Valid event names are `commit`, `task_completed`, and `architecture_decision`; all default off.
+
+`codegraph-impact-digest/v1` records event identity, RFC3339 capture time, canonical worktree identity, branch/commit/dirty state, bounded repository-relative files, affected symbols/tests, an optional decision, a human summary, and graph provenance. Bounds are 20 changed files, 12 symbols, 8 tests, 600 decision characters, 800 summary characters, and 12 KiB canonical JSON.
+
+The REST mapping is:
+
+| Digest field | `/agentmemory/remember` field |
+|-------------|--------------------------------|
+| Canonical digest | `content`, prefixed by `CODEGRAPH_IMPACT_DIGEST_V1` |
+| Commit/task event | `type=fact` |
+| Architecture decision | `type=architecture` |
+| Event and commit identity | comma-separated `concepts` |
+| Changed paths | comma-separated `files` |
+| Stable project ID | `project` |
+
+The bridge adds a bearer header only from `AGENTMEMORY_SECRET`; it never logs the header or response body. HTTP writes use a 1.5 second timeout and one retry, and event IDs are recorded only after HTTP 201.
+
+## Cache and circuit breaker
+
+- Bridge state: `${XDG_CACHE_HOME:-~/.cache}/setup-dev-spec-memory/codegraph-bridge/<sha256-project-id>/bridge-state.json`
+- Adapter log: the same directory's bounded `bridge.log`
+- Pilot evidence: `${XDG_CACHE_HOME:-~/.cache}/setup-dev-spec-memory/codegraph-pilot/<run-id>/`
+- Repository index: `<repo>/.codegraph/`, excluded by Git
+
+Bridge state retains at most 128 successful event IDs plus memory IDs/timestamps and failure counters. Three consecutive graph failures open a 15-minute circuit. Corrupt state is renamed with `.corrupt-<timestamp>` and recreated. No source, patch, raw edge, prompt, secret, or environment value belongs in these files.
+
+## CodeGraph verification
+
+```bash
+python3 -m unittest tests.test_codegraph_contract \
+  tests.test_install_codegraph_runtime tests.test_verify_codegraph_runtime \
+  tests.test_codegraph_digest tests.test_codegraph_bridge \
+  tests.test_codegraph_bridge_hook tests.test_install_codegraph_bridge \
+  tests.test_codegraph_pilot -v
+
+python3 scripts/verify_codegraph_runtime.py \
+  --repo /Users/zouhao/skills/setup-dev-spec-memory
+
+mkdir -p .codegraph
+git check-ignore -q .codegraph/codegraph.db
+```
+
+## CodeGraph failure matrix
+
+| Failure | Required behavior |
+|---------|-------------------|
+| Binary/version/artifact mismatch | Stop optional integration installation; do not affect bootstrap |
+| Existing MCP config differs | Report redacted current/expected config; never replace automatically |
+| Missing/stale/partial/wrong-worktree index | Fall back to source tools; omit graph claims or skip the digest |
+| Worktree changes during sync | Skip the event without writing memory |
+| Three graph failures | Open the 15-minute local circuit; keep agentmemory and development active |
+| agentmemory REST outage | Retry once, skip the derived digest, keep commit/task successful |
+| Hook payload/spawn failure | Emit `{"continue":true}` and exit 0 |
+| Pilot misses 20% gain or loses accuracy | Leave every bridge event off; keep CodeGraph manual and optional |
+| Rollback requested | Remove MCP and set events to `none`; do not delete indexes or memories |
