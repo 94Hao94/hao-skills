@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -642,6 +643,16 @@ def _default_cache(project_id: str) -> Path:
     return base / "setup-dev-spec-memory" / "codegraph-bridge" / project_hash
 
 
+def resolve_codegraph_binary(value: str) -> Path:
+    """Resolve a bare CodeGraph command through PATH, preserving explicit paths."""
+
+    if Path(value).name == value:
+        resolved = shutil.which(value)
+        if resolved:
+            return Path(resolved).resolve()
+    return Path(value).expanduser().resolve()
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     common = argparse.ArgumentParser(add_help=False)
@@ -668,7 +679,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         request = BridgeRequest(
             event_type=event_type,
             project_root=root,
-            codegraph_bin=Path(args.codegraph_bin).expanduser(),
+            codegraph_bin=resolve_codegraph_binary(args.codegraph_bin),
             agentmemory_url=args.agentmemory_url,
             cache_dir=cache,
             commit_sha=getattr(args, "commit_sha", None),

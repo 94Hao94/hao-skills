@@ -4,8 +4,9 @@ import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
-from scripts.codegraph_bridge import BridgeRequest, run_bridge
+from scripts.codegraph_bridge import BridgeRequest, resolve_codegraph_binary, run_bridge
 from scripts.codegraph_contract import load_config
 
 
@@ -131,6 +132,10 @@ class CodeGraphBridgeTests(unittest.TestCase):
         result = run_bridge(self.commit_request, self.config, run=self.runner, post_json=self.agentmemory.post, clock=self.clock)
         self.assertEqual((result.status, result.reason), ("skipped", "event disabled"))
         self.assertEqual(self.runner.commands, [])
+
+    def test_bare_codegraph_binary_resolves_from_path(self):
+        with mock.patch("scripts.codegraph_bridge.shutil.which", return_value="/opt/bin/codegraph"):
+            self.assertEqual(resolve_codegraph_binary("codegraph"), Path("/opt/bin/codegraph"))
 
     def test_commit_uses_root_diff_syncs_then_writes_one_memory(self):
         result = run_bridge(self.commit_request, self.config_with("commit"), run=self.runner, post_json=self.agentmemory.post, clock=self.clock)
