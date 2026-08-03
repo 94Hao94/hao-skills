@@ -80,6 +80,16 @@ def _final_files(events: Sequence[Tuple[float, Mapping[str, Any]]]) -> List[str]
     return []
 
 
+def _matches_expected(files: Sequence[str], expected: Sequence[str]) -> bool:
+    for value in files:
+        normalized = value.replace("\\", "/").rstrip("/")
+        for relative in expected:
+            target = relative.replace("\\", "/").lstrip("/")
+            if normalized == target or normalized.endswith("/" + target):
+                return True
+    return False
+
+
 def summarize_events(
     events: Sequence[Tuple[float, Mapping[str, Any]]],
     *,
@@ -115,7 +125,7 @@ def summarize_events(
                 output_tokens += int(usage.get("output_tokens", 0) or 0)
                 cached_tokens += int(usage.get("cached_input_tokens", 0) or 0)
     files = list(final_files) if final_files is not None else _final_files(events)
-    accurate = exit_code == 0 and bool(expected.intersection(files))
+    accurate = exit_code == 0 and _matches_expected(files, tuple(expected))
     return PilotRun(
         task_id=task_id,
         enabled=enabled,

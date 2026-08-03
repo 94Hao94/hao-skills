@@ -33,6 +33,17 @@ class CodeGraphPilotTests(unittest.TestCase):
         self.assertEqual(run.time_to_first_correct_file, 1.1)
         self.assertEqual(run.accuracy, 1.0)
 
+    def test_absolute_final_file_matches_repository_relative_expectation(self):
+        run = summarize_events(
+            [],
+            task_id="bootstrap-render",
+            enabled=True,
+            expected_files=["scripts/dev_spec_contract.py"],
+            exit_code=0,
+            final_files=["/Users/example/repo/scripts/dev_spec_contract.py"],
+        )
+        self.assertEqual(run.accuracy, 1.0)
+
     def test_parse_event_rejects_non_object_json_without_leaking_line(self):
         self.assertIsNone(parse_event("not-json", 0.5))
         self.assertIsNone(parse_event("[]", 0.5))
