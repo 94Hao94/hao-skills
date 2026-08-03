@@ -1,0 +1,14 @@
+{
+  "schema": "codegraph-agentmemory-config/v1",
+  "project_id": "94Hao94/setup-dev-spec-memory",
+  "codegraph_version": "1.5.0",
+  "enabled_events": [],
+  "limits": {
+    "changed_files": 20,
+    "affected_symbols": 12,
+    "affected_tests": 8,
+    "decision_characters": 600,
+    "summary_characters": 800,
+    "serialized_bytes": 12288
+  }
+}
