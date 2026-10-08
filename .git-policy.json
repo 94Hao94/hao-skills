@@ -1,0 +1,10 @@
+{
+  "schema": "git-policy/v1",
+  "scopes": ["dev-spec", "git-policy", "bootstrap", "memory", "codegraph", "hooks", "deps", "ci", "docs", "tests"],
+  "fixed_branches": ["main", "master", "develop"],
+  "protected_branches": ["main", "master"],
+  "legacy_branches": ["codex/codegraph-agentmemory-integration", "feat/project-param-and-docs-habit"],
+  "legacy_pr_titles": {
+    "feat/project-param-and-docs-habit": "[codex] enforce universal development spec bootstrap"
+  }
+}

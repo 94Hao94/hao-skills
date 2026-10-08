@@ -63,3 +63,9 @@ git diff --check
 
 可选 CodeGraph 的现有安装、桥接与测试保留；它提供当前代码结构，不替代宿主记忆路由。
 任何当前项目、worktree 或 branch 的历史信息仍须核对实际源码和作用域。
+
+## 统一 Git 规范
+
+新任务分支使用 `<type>/<scope>-<task>`，不加 Agent 前缀。类型、Agent 工作流、本地 hook
+安装、迁移兼容名单和 GitHub 必要检查见 [Git 规范](docs/git-policy.md)；权威规则为
+[development-spec.md](references/development-spec.md) 第六章。
