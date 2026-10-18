@@ -1,136 +1,165 @@
 #!/usr/bin/env python3
-"""Inject the universal development-spec contract into Codex SessionStart."""
+"""Load the integrity-checked personal development skill for either host."""
 
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import os
-import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+import re
+import sys
+import tempfile
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.dev_spec_contract import (
-    SLOT_LABEL,
-    build_contract,
-    parse_spec,
-    validate_contract,
-)
+
+def _receipt_path(state_root: Path, host: str, session_id: str) -> Path:
+    """Return a session receipt path; identifiers never become path segments."""
+    key = hashlib.sha256((host + ":" + session_id).encode()).hexdigest()
+    return state_root / host / (key + ".json")
 
 
-REQUEST_TIMEOUT_SECONDS = 1.5
-
-
-def _is_true(value: Any) -> bool:
-    return value is True or (isinstance(value, str) and value.lower() == "true")
-
-
-def _slots_from_payload(payload: Any) -> Iterable[Mapping[str, Any]]:
-    if isinstance(payload, list):
-        candidates = payload
-    elif isinstance(payload, dict):
-        candidates = payload.get("slots", payload.get("items", []))
-    else:
-        candidates = []
-    if not isinstance(candidates, list):
-        return []
-    return [item for item in candidates if isinstance(item, dict)]
-
-
-def fetch_global_contract(
-    base_url: str,
-    secret: str = "",
-    expected_version: str = "",
-    expected_sha256: str = "",
-) -> str:
-    """Fetch and validate the fixed global pinned bootstrap slot."""
-
-    url = base_url.rstrip("/") + "/agentmemory/slots"
-    headers = {"Accept": "application/json"}
-    if secret:
-        headers["Authorization"] = "Bearer " + secret
-    request = Request(url, headers=headers, method="GET")
-    with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    for slot in _slots_from_payload(payload):
-        if slot.get("label") != SLOT_LABEL:
-            continue
-        if slot.get("scope") != "global" or not _is_true(slot.get("pinned")):
-            raise ValueError("bootstrap slot is not global and pinned")
-        content = slot.get("content")
-        if not isinstance(content, str):
-            raise ValueError("bootstrap slot content is missing")
-        missing = validate_contract(content)
-        if missing:
-            raise ValueError("bootstrap contract is missing required tokens")
-        if expected_version and "AI_DEV_SPEC_BOOTSTRAP %s" % expected_version not in content:
-            raise ValueError("bootstrap contract version is stale")
-        if expected_sha256 and "sha256=%s" % expected_sha256 not in content:
-            raise ValueError("bootstrap contract SHA-256 is stale")
-        return content
-    raise ValueError("bootstrap slot is missing")
-
-
-def _continue_result(content: str) -> Dict[str, Any]:
-    return {
-        "continue": True,
-        "hookSpecificOutput": {
-            "hookEventName": "SessionStart",
-            "additionalContext": content,
-        },
-    }
-
-
-def _stop_result() -> Dict[str, Any]:
-    return {
-        "continue": False,
-        "stopReason": "development spec bootstrap unavailable: agentmemory slot and local authority both failed",
-        "systemMessage": "Universal development gate blocked this session before project work.",
-    }
-
-
-def run_gate() -> Dict[str, Any]:
-    """Resolve the global contract, then degrade to the local authority."""
-
-    base_url = os.environ.get("AGENTMEMORY_URL", "http://localhost:3111")
-    secret = os.environ.get("AGENTMEMORY_SECRET", "")
-    authority = Path(
-        os.environ.get("AI_DEV_SPEC_PATH", "~/AI开发执行规范.md")
-    ).expanduser()
+def _write_receipt(path: Path, value: dict) -> None:
+    """Atomically store loading metadata, without task or chat content."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, name = tempfile.mkstemp(prefix=".skill-load-", dir=path.parent)
     try:
-        local_meta = parse_spec(authority)
-    except (OSError, UnicodeError, ValueError):
-        local_meta = None
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(value, handle)
+        os.replace(name, path)
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
+def run_gate(
+    root: Path,
+    payload: dict[str, Any],
+    host: str = "codex",
+    event: str = "SessionStart",
+    state_root: Path | None = None,
+) -> dict:
+    """Validate and load the package, or fail closed without legacy fallback.
+
+    Args: root is the installed skill; payload is host JSON; host selects
+    memory routing; event selects full or changed-only loading; state_root
+    holds loading receipts. Returns host hook JSON. Invalid packages are
+    reported with continue=false. No memory service or external spec is read.
+    """
     try:
-        return _continue_result(
-            fetch_global_contract(
-                base_url,
-                secret,
-                local_meta.version if local_meta else "",
-                local_meta.sha256 if local_meta else "",
+        from scripts.skill_evolution import read_verified_package
+
+        root = root.expanduser().resolve()
+        with read_verified_package(root) as manifest:
+            return _load_verified(root, payload, host, event, state_root, manifest)
+    except Exception as exc:
+        return {
+            "continue": False,
+            "stopReason": "personal development skill unavailable: "
+            + type(exc).__name__,
+            "systemMessage": "Development gate blocked: repair the installed skill package; "
+            "do not load an old memory slot or external specification.",
+        }
+
+
+def _load_verified(
+    root: Path,
+    payload: dict,
+    host: str,
+    event: str,
+    state_root: Path | None,
+    manifest: dict,
+) -> dict:
+    """Read/inject one verified package while the caller holds its shared lock."""
+    try:
+        from scripts.dev_spec_contract import build_contract, parse_spec
+
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        spec = root / "references" / "development-spec.md"
+        meta = parse_spec(spec)
+        session_id = str(payload.get("session_id") or payload.get("sessionId") or "")
+        state = state_root or Path(
+            os.environ.get(
+                "DEV_SKILL_STATE_ROOT", str(Path.home() / ".cache/personal-dev-skill")
             )
         )
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError):
-        pass
+        receipt = _receipt_path(state, host, session_id) if session_id else None
+        package_sha = manifest["package_sha256"]
+        if event == "UserPromptSubmit" and receipt:
+            try:
+                previous = json.loads(receipt.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                previous = {}
+            if not isinstance(previous, dict):
+                previous = {}
+            if previous.get("package_sha256") == package_sha:
+                return {"continue": True}
+        body = re.sub(r"\A---\s*\n.*?\n---\s*\n", "", skill, count=1, flags=re.S)
+        context = (
+            f"<personal_development_skill host={host!r} revision={manifest['version']!r} "
+            f"sha256={package_sha!r}>\n"
+            + build_contract(meta, spec, host=host)
+            + "\nLoaded setup-dev-spec-memory skill; apply before development.\n\n"
+            + body.strip()
+            + "\n</personal_development_skill>"
+        )
+        if receipt:
+            _write_receipt(
+                receipt,
+                {
+                    "package_sha256": package_sha,
+                    "version": manifest["version"],
+                    "host": host,
+                },
+            )
+        return {
+            "continue": True,
+            "hookSpecificOutput": {
+                "hookEventName": event,
+                "additionalContext": context,
+            },
+        }
+    except Exception as exc:
+        return {
+            "continue": False,
+            "stopReason": "personal development skill unavailable: "
+            + type(exc).__name__,
+            "systemMessage": "Development gate blocked: repair the installed skill package; "
+            "do not load an old memory slot or external specification.",
+        }
 
-    if local_meta:
-        return _continue_result(build_contract(local_meta, authority, degraded=True))
-    return _stop_result()
 
-
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    """Parse host/event and emit one redacted hook response."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--host", choices=("codex", "claude"), default="codex")
+    parser.add_argument(
+        "--event", choices=("SessionStart", "UserPromptSubmit"), default="SessionStart"
+    )
+    parser.add_argument(
+        "--skill-root", type=Path, default=Path(__file__).resolve().parents[1]
+    )
+    args = parser.parse_args(argv)
     try:
-        raw = sys.stdin.read()
-        if raw:
-            json.loads(raw)
-    except json.JSONDecodeError:
-        print(json.dumps(_stop_result(), ensure_ascii=False))
+        payload = json.loads(sys.stdin.read() or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("event must be an object")
+    except ValueError:
+        print(
+            json.dumps(
+                {"continue": False, "stopReason": "invalid development skill event"}
+            )
+        )
         return 0
-    print(json.dumps(run_gate(), ensure_ascii=False))
+    print(
+        json.dumps(
+            run_gate(args.skill_root, payload, args.host, args.event),
+            ensure_ascii=False,
+        )
+    )
     return 0
 
 

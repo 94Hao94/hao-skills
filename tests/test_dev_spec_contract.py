@@ -29,8 +29,8 @@ class ContractTests(unittest.TestCase):
 
         self.assertEqual(meta.version, "v1.6")
         self.assertEqual(len(meta.sha256), 64)
-        self.assertIn("AI_DEV_SPEC_BOOTSTRAP", contract)
-        self.assertIn("ai_dev_spec_bootstrap", contract)
+        self.assertIn("PERSONAL_DEV_SKILL", contract)
+        self.assertIn("mode=SKILL_PACKAGE", contract)
         self.assertIn("git worktree list --porcelain", contract)
         self.assertIn("git branch --show-current", contract)
         self.assertIn("standard port", contract)
@@ -93,11 +93,7 @@ class ContractTests(unittest.TestCase):
 
     def test_hook_merge_preserves_existing_hooks(self):
         source = {
-            "hooks": {
-                "Stop": [
-                    {"hooks": [{"type": "command", "command": "existing"}]}
-                ]
-            }
+            "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "existing"}]}]}
         }
         merged = merge_codex_hooks(source, "/absolute/codex_session_gate.py")
 

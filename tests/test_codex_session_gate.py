@@ -1,147 +1,106 @@
+import tempfile
 import json
-import os
 import subprocess
 import sys
-import tempfile
-import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
-from scripts.dev_spec_contract import build_contract, parse_spec
-
-
-ROOT = Path(__file__).resolve().parents[1]
-GATE = ROOT / "scripts" / "codex_session_gate.py"
-
-
-class _SlotHandler(BaseHTTPRequestHandler):
-    status = 200
-    payload = {"slots": []}
-
-    def do_GET(self):
-        if self.path != "/agentmemory/slots":
-            self.send_response(404)
-            self.end_headers()
-            return
-        body = json.dumps(type(self).payload).encode("utf-8")
-        self.send_response(type(self).status)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        return
+from unittest.mock import patch
+from scripts.codex_session_gate import run_gate
+from scripts.skill_evolution import MANIFEST, initialize_manifest
+from scripts.dev_spec_contract import gate_command
+from tests.skill_fixture import make_skill
 
 
 class GateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.spec = Path(self.tmp.name) / "AI开发执行规范.md"
-        self.spec.write_text(
-            "# AI 开发执行规范\n\n> 规范版本：v1.6\n",
-            encoding="utf-8",
-        )
-        _SlotHandler.status = 200
-        _SlotHandler.payload = {"slots": []}
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), _SlotHandler)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
+        self.home = Path(self.tmp.name)
+        self.root = make_skill(self.home / "skill")
+        self.state = self.home / "load-state"
 
     def tearDown(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=2)
         self.tmp.cleanup()
 
-    def run_gate(self, spec_path=None):
-        env = os.environ.copy()
-        env["AGENTMEMORY_URL"] = "http://127.0.0.1:%d" % self.server.server_port
-        env["AI_DEV_SPEC_PATH"] = str(spec_path or self.spec)
-        completed = subprocess.run(
-            [sys.executable, str(GATE)],
-            input=json.dumps(
-                {
-                    "session_id": "gate-test",
-                    "cwd": self.tmp.name,
-                    "hook_event_name": "SessionStart",
-                    "source": "startup",
-                }
+    def run_gate(self, host="codex", event="SessionStart", session="one"):
+        return run_gate(
+            self.root,
+            {"session_id": session, "cwd": "/unrelated/project"},
+            host,
+            event,
+            self.state,
+        )
+
+    def test_routes_hosts_without_network_or_external_document(self):
+        with patch(
+            "urllib.request.urlopen", side_effect=AssertionError("network forbidden")
+        ):
+            codex = self.run_gate()
+            claude = self.run_gate("claude")
+        self.assertIn(
+            "EP user_preference", codex["hookSpecificOutput"]["additionalContext"]
+        )
+        self.assertIn(
+            "agentmemory for project recall",
+            claude["hookSpecificOutput"]["additionalContext"],
+        )
+        self.assertNotIn("~/AI开发执行规范.md", str(codex))
+        self.assertNotIn("GLOBAL_PINNED_SLOT", str(claude))
+
+    def test_unchanged_prompt_does_not_repeat_context(self):
+        self.assertIn("hookSpecificOutput", self.run_gate())
+        self.assertEqual(self.run_gate(event="UserPromptSubmit"), {"continue": True})
+
+    def test_update_is_loaded_at_next_message_not_cached_forever(self):
+        self.run_gate()
+        skill = self.root / "SKILL.md"
+        skill.write_text(skill.read_text() + "\nUpdated scoped instruction.\n")
+        # Explicit maintainer release fixture, not the automatic promotion path.
+        (self.root / MANIFEST).unlink()
+        initialize_manifest(self.root, "test maintainer release")
+        result = self.run_gate(event="UserPromptSubmit")
+        self.assertIn(
+            "Updated scoped instruction",
+            result["hookSpecificOutput"]["additionalContext"],
+        )
+
+    def test_tampered_and_missing_packages_fail_closed(self):
+        (self.root / "references/development-spec.md").write_text("tampered")
+        self.assertFalse(self.run_gate()["continue"])
+        (self.root / MANIFEST).unlink()
+        self.assertFalse(self.run_gate()["continue"])
+
+    def test_resume_and_compact_always_reload_core(self):
+        for _ in range(2):
+            self.assertIn("hookSpecificOutput", self.run_gate())
+
+    def test_receipts_contain_no_task_or_prompt_data(self):
+        payload = {
+            "session_id": "../../outside",
+            "prompt": "PRIVATE_TASK",
+            "cwd": "/private",
+        }
+        result = run_gate(self.root, payload, "codex", "SessionStart", self.state)
+        self.assertTrue(result["continue"])
+        receipts = list(self.state.rglob("*.json"))
+        self.assertEqual(len(receipts), 1)
+        self.assertNotIn("PRIVATE_TASK", receipts[0].read_text())
+        self.assertNotIn("/private", receipts[0].read_text())
+
+    def test_corrupt_receipt_reloads_instead_of_crashing(self):
+        self.run_gate()
+        receipt = next(self.state.rglob("*.json"))
+        for value in ([], None, "invalid"):
+            receipt.write_text(json.dumps(value))
+            self.assertTrue(self.run_gate(event="UserPromptSubmit")["continue"])
+
+    def test_missing_loader_returns_blocking_host_json(self):
+        result = subprocess.run(
+            gate_command(
+                "/missing/dev-skill/gate.py", sys.executable, "codex", "SessionStart"
             ),
+            shell=True,
             text=True,
             capture_output=True,
-            env=env,
-            cwd=str(ROOT),
-            timeout=5,
-            check=False,
         )
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        return json.loads(completed.stdout)
-
-    def test_valid_global_slot_is_injected(self):
-        contract = build_contract(parse_spec(self.spec), self.spec)
-        _SlotHandler.payload = {
-            "slots": [
-                {
-                    "label": "ai_dev_spec_bootstrap",
-                    "scope": "global",
-                    "pinned": True,
-                    "content": contract,
-                }
-            ]
-        }
-
-        result = self.run_gate()
-
-        self.assertTrue(result["continue"])
-        context = result["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("AI_DEV_SPEC_BOOTSTRAP", context)
-        self.assertNotIn("DEGRADED_LOCAL_AUTHORITY", context)
-
-    def test_missing_slot_uses_local_spec(self):
-        _SlotHandler.status = 503
-
-        result = self.run_gate()
-
-        self.assertTrue(result["continue"])
-        context = result["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("DEGRADED_LOCAL_AUTHORITY", context)
-        self.assertIn("v1.6", context)
-
-    def test_stale_global_slot_uses_current_local_spec(self):
-        stale = Path(self.tmp.name) / "stale.md"
-        stale.write_text(
-            "# AI 开发执行规范\n\n> 规范版本：v1.5\n",
-            encoding="utf-8",
-        )
-        _SlotHandler.payload = {
-            "slots": [
-                {
-                    "label": "ai_dev_spec_bootstrap",
-                    "scope": "global",
-                    "pinned": True,
-                    "content": build_contract(parse_spec(stale), stale),
-                }
-            ]
-        }
-
-        result = self.run_gate()
-
-        context = result["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("AI_DEV_SPEC_BOOTSTRAP v1.6", context)
-        self.assertIn("DEGRADED_LOCAL_AUTHORITY", context)
-
-    def test_missing_slot_and_local_spec_fails_closed(self):
-        _SlotHandler.status = 503
-        missing = Path(self.tmp.name) / "missing.md"
-
-        result = self.run_gate(missing)
-
-        self.assertFalse(result["continue"])
-        self.assertIn("development spec bootstrap unavailable", result["stopReason"])
-        self.assertIn("Universal development gate blocked", result["systemMessage"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(result.returncode, 0)
+        self.assertFalse(json.loads(result.stdout)["continue"])

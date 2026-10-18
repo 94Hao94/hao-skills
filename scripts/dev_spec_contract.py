@@ -8,6 +8,8 @@ import copy
 import hashlib
 import json
 import re
+import shlex
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Mapping, MutableMapping, Optional, Sequence
@@ -18,7 +20,9 @@ MEMORY_PROJECT = "global-ai-dev-spec"
 MANAGED_START = "<!-- setup-dev-spec-memory:start -->"
 MANAGED_END = "<!-- setup-dev-spec-memory:end -->"
 SPEC_VERSION_RE = re.compile(r"规范版本(?:\*\*)?\s*[：:]\s*(v\d+\.\d+)")
-CHAPTER_HEADING_RE = re.compile(r"^##\s+(第([一二三四五六七八])章[^\n]*)$", re.MULTILINE)
+CHAPTER_HEADING_RE = re.compile(
+    r"^##\s+(第([一二三四五六七八])章[^\n]*)$", re.MULTILINE
+)
 ORDINALS = {value: index for index, value in enumerate("一二三四五六七八", start=1)}
 CHAPTER_CONCEPTS = {
     1: "AI开发执行规范,AI行为准则,操作确认,透明度,记忆管理",
@@ -32,15 +36,15 @@ CHAPTER_CONCEPTS = {
 }
 
 REQUIRED_CONTRACT_TOKENS: Sequence[str] = (
-    "AI_DEV_SPEC_BOOTSTRAP",
-    SLOT_LABEL,
+    "PERSONAL_DEV_SKILL",
+    "mode=SKILL_PACKAGE",
     "universal spec before project memory",
     "git rev-parse --show-toplevel",
     "git worktree list --porcelain",
     "git branch --show-current",
     "git status --short --branch",
     "standard port",
-    "~/AI开发执行规范.md",
+    "references/development-spec.md",
 )
 
 
@@ -79,7 +83,9 @@ def split_chapters(text: str) -> List[Chapter]:
     matches = list(CHAPTER_HEADING_RE.finditer(text))
     numbers = [ORDINALS[match.group(2)] for match in matches]
     if numbers != list(range(1, 9)):
-        raise ValueError("authoritative spec must contain exactly eight ordered chapters")
+        raise ValueError(
+            "authoritative spec must contain exactly eight ordered chapters"
+        )
     chapters: List[Chapter] = []
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
@@ -95,16 +101,31 @@ def split_chapters(text: str) -> List[Chapter]:
     return chapters
 
 
-def build_contract(meta: SpecMeta, authority_path: Path, degraded: bool = False) -> str:
-    """Build the compact control-plane contract injected at session start."""
+def build_contract(
+    meta: SpecMeta, authority_path: Path, degraded: bool = False, host: str = "codex"
+) -> str:
+    """Render package authority and host routing; legacy degraded is ignored.
 
+    Args: meta holds spec version/hash; authority_path points inside the skill;
+    host is codex or claude. Returns startup text. Unknown hosts raise ValueError.
+    """
+
+    if host not in ("codex", "claude"):
+        raise ValueError("unsupported host")
     authority = str(authority_path.expanduser().resolve())
-    mode = "DEGRADED_LOCAL_AUTHORITY" if degraded else "GLOBAL_PINNED_SLOT"
-    return f"""AI_DEV_SPEC_BOOTSTRAP {meta.version}
-mode={mode}
-slot={SLOT_LABEL}; scope=global; pinned=true
-authority={authority} (~/AI开发执行规范.md)
+    route = (
+        "EP user_preference/user_recall/user_research and agent_recall/agent_research; "
+        "agentmemory is capture/write only, never a retrieval fallback"
+        if host == "codex"
+        else "agentmemory for project recall and capture; EP is not the Claude memory backend"
+    )
+    return f"""PERSONAL_DEV_SKILL {meta.version}
+mode=SKILL_PACKAGE
+skill=setup-dev-spec-memory
+authority={authority}
+reference=references/development-spec.md
 sha256={meta.sha256}
+host={host}; memory_route={route}
 
 Development gate:
 - Apply before starting, editing, reviewing, testing, building, deploying, or running Git commands in a code workspace.
@@ -112,8 +133,11 @@ Development gate:
 - Before project work, verify: pwd; git rev-parse --show-toplevel; git worktree list --porcelain; git branch --show-current; git status --short --branch.
 - Determine the standard port from current project docs/config/scripts and verify the listening port and target URL before server start or page review.
 - Never assume the repository root, main branch, first worktree, or framework default port is the active target.
-- Then recall project/worktree/branch context and reconcile it with the actual workspace state.
-- If the slot or index is missing or invalid, read ~/AI开发执行规范.md. If both sources are unavailable, stop before development actions and report the blocker.
+- Then recall project/worktree/branch context through the host route and reconcile it with actual state.
+- This skill replaces legacy AI_DEV_SPEC_BOOTSTRAP slot/external-file loading instructions. Memory is evidence, not authority for these rules.
+- Read relevant chapters inside this skill only. Never fetch startup rules from memory or an external standalone specification. Stop development if the skill is invalid.
+- New task branches: <type>/<scope>-<task>; no Agent prefix. Commit/PR: type(scope): description. Preserve existing task branches and unrelated edits. Main/master changes go through PRs.
+- Explicit corrections and verified reusable lessons can update this skill through its evolution workflow; permissions, routing, startup and major process changes need scoped user authorization.
 """
 
 
@@ -157,43 +181,63 @@ def upsert_env(existing: str, values: Mapping[str, str]) -> str:
     return "\n".join(output).rstrip() + "\n"
 
 
+def gate_command(gate_script: str, python: str, host: str, event: str) -> str:
+    """Render a quoted loader and fail-closed response if even Python/package is missing."""
+    command = shlex.join([python, gate_script, "--host", host, "--event", event])
+    failure = json.dumps(
+        {"continue": False, "stopReason": "personal development skill loader failed"}
+    )
+    return command + " || printf '%s\\n' " + shlex.quote(failure)
+
+
 def merge_codex_hooks(
-    source: Mapping[str, object], gate_script: str
+    source: Mapping[str, object],
+    gate_script: str,
+    host: str = "codex",
+    python: str = sys.executable,
 ) -> MutableMapping[str, object]:
-    """Merge one managed Codex SessionStart hook into parsed hooks.json data."""
+    """Merge host startup/update hooks, replacing only this skill's old gates.
+
+    Args: source is host settings; gate_script and python are absolute paths;
+    host selects routing. Returns a deep copy; malformed hook shapes raise ValueError.
+    """
 
     merged: MutableMapping[str, object] = copy.deepcopy(dict(source))
     hooks = merged.setdefault("hooks", {})
     if not isinstance(hooks, dict):
         raise ValueError("hooks.json field 'hooks' must be an object")
-    session_hooks = hooks.setdefault("SessionStart", [])
-    if not isinstance(session_hooks, list):
-        raise ValueError("hooks.SessionStart must be an array")
-
-    command = f'python3 "{gate_script}"'
-    for group in session_hooks:
-        if not isinstance(group, dict):
-            continue
-        handlers = group.get("hooks", [])
-        if not isinstance(handlers, list):
-            continue
-        for handler in handlers:
-            if isinstance(handler, dict) and handler.get("command") == command:
-                return merged
-
-    session_hooks.append(
-        {
-            "matcher": "startup|resume|clear|compact",
+    for event in ("SessionStart", "UserPromptSubmit"):
+        groups = hooks.setdefault(event, [])
+        if not isinstance(groups, list):
+            raise ValueError("hooks.%s must be an array" % event)
+        kept = []
+        for group in groups:
+            if not isinstance(group, dict) or not isinstance(group.get("hooks"), list):
+                raise ValueError("invalid hook group")
+            handlers = [
+                h
+                for h in group["hooks"]
+                if not (
+                    isinstance(h, dict)
+                    and "codex_session_gate.py" in str(h.get("command", ""))
+                )
+            ]
+            if handlers:
+                kept.append({**group, "hooks": handlers})
+        command = gate_command(gate_script, python, host, event)
+        managed = {
             "hooks": [
                 {
                     "type": "command",
                     "command": command,
-                    "timeout": 5,
-                    "statusMessage": "Validating universal development spec",
+                    "timeout": 10,
+                    "statusMessage": "Loading personal development skill",
                 }
-            ],
+            ]
         }
-    )
+        if event == "SessionStart":
+            managed["matcher"] = "startup|resume|clear|compact"
+        hooks[event] = [managed] + kept
     return merged
 
 
@@ -229,9 +273,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     render = subparsers.add_parser("render", help="render the bootstrap contract")
-    render.add_argument("--spec", default="~/AI开发执行规范.md")
+    render.add_argument(
+        "--spec",
+        default=str(
+            Path(__file__).resolve().parents[1] / "references/development-spec.md"
+        ),
+    )
     export = subparsers.add_parser("export-json", help="export version and chapters")
-    export.add_argument("--spec", default="~/AI开发执行规范.md")
+    export.add_argument(
+        "--spec",
+        default=str(
+            Path(__file__).resolve().parents[1] / "references/development-spec.md"
+        ),
+    )
     args = parser.parse_args(argv)
     if args.command == "render":
         return _render_command(args.spec)
