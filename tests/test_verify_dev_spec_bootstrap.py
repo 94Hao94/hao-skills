@@ -23,6 +23,12 @@ class VerifierTests(unittest.TestCase):
             checks.extend(verify_hook_execution(self.root.resolve(), host, self.home))
         self.assertTrue(all(c.ok for c in checks), checks)
 
+    def test_missing_hao_link_is_not_reported_as_success(self):
+        (self.home / ".claude/skills/hao").unlink()
+        checks = verify_static(self.home, repo_root=self.root)
+        failed = [c.name for c in checks if not c.ok]
+        self.assertEqual(failed, ["claude skill link hao"])
+
     def test_missing_hook_is_not_reported_as_success(self):
         (self.home / ".codex/hooks.json").unlink()
         checks = verify_static(self.home, repo_root=self.root)

@@ -142,6 +142,22 @@ def _instruction_block(root: Path, host: str) -> str:
     )
 
 
+def package_skill_links(root: Path) -> list[tuple[str, Path]]:
+    """List the host skill links a package provides.
+
+    Args: root is the resolved package root. Returns (link name, target) pairs:
+    the legacy root skill ``setup-dev-spec-memory`` first, then every
+    ``skills/<name>/`` directory that holds a SKILL.md, sorted by name.
+    """
+    links = [("setup-dev-spec-memory", root)]
+    skills = root / "skills"
+    if skills.is_dir():
+        for child in sorted(skills.iterdir()):
+            if child.is_dir() and (child / "SKILL.md").is_file():
+                links.append((child.name, child.resolve()))
+    return links
+
+
 def build_install_plan(
     home: Path,
     spec: Path | None = None,
@@ -200,16 +216,17 @@ def build_install_plan(
         after = json.dumps(merged, ensure_ascii=False, indent=2) + "\n"
         if before != after:
             changes.append(FileChange(path, before, after))
-        link = directory / "skills/setup-dev-spec-memory"
-        if not (link.is_symlink() and link.resolve() == root):
-            changes.append(
-                LinkChange(
-                    link,
-                    root,
-                    os.readlink(link) if link.is_symlink() else None,
-                    link.exists() or link.is_symlink(),
+        for name, target in package_skill_links(root):
+            link = directory / "skills" / name
+            if not (link.is_symlink() and link.resolve() == target):
+                changes.append(
+                    LinkChange(
+                        link,
+                        target,
+                        os.readlink(link) if link.is_symlink() else None,
+                        link.exists() or link.is_symlink(),
+                    )
                 )
-            )
     return changes
 
 

@@ -71,6 +71,14 @@ class InstallerTests(unittest.TestCase):
                 self.root.resolve(),
             )
 
+    def test_package_skills_get_their_own_host_links(self):
+        apply_install_plan(self.plan(), "fixed")
+        for host in (".codex", ".claude"):
+            link = self.home / host / "skills/hao"
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.resolve(), (self.root / "skills/hao").resolve())
+            self.assertTrue((link / "SKILL.md").is_file())
+
     def test_codex_only_leaves_claude_byte_identical(self):
         before = (self.home / ".claude/settings.json").read_bytes()
         apply_install_plan(self.plan("codex"))
@@ -88,7 +96,10 @@ class InstallerTests(unittest.TestCase):
             / ".local/state/personal-dev-skill/install-backups/fixed/.claude/setup-dev-spec-memory"
         )
         self.assertEqual((backup / "SKILL.md").read_text(), "old skill")
-        self.assertEqual(len(list(old.parent.iterdir())), 1)
+        self.assertEqual(
+            [p.name for p in old.parent.iterdir() if p.name != "hao"],
+            ["setup-dev-spec-memory"],
+        )
 
     def test_invalid_hooks_and_concurrent_edits_abort_before_writes(self):
         path = self.home / ".codex/hooks.json"

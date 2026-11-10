@@ -11,7 +11,7 @@ def make_skill(path):
     """Copy executable skill parts into an isolated package and seal them."""
     root = Path(path)
     root.mkdir(parents=True, exist_ok=True)
-    for folder in ("scripts", "references"):
+    for folder in ("scripts", "references", "skills"):
         shutil.copytree(
             SOURCE / folder, root / folder, ignore=shutil.ignore_patterns("__pycache__")
         )
