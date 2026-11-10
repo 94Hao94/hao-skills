@@ -31,7 +31,7 @@
 
 ```
 skills/
-  personal-skill-index/     路由表与跨领域偏好
+  hao/                      主 skill(索引):路由表与跨领域偏好
   setup-dev-spec-memory/    开发规范,名称与路径不变
   ppt-spec/                 以后按需新增
   word-spec/                以后按需新增
@@ -44,7 +44,7 @@ skills/
 
 ### 3.1 索引 skill
 
-- 名称 `personal-skill-index`。
+- 名称 `hao`(已确认),类似 superpowers 的品牌式主 skill 名;斜杠命令为 `/hao`。目录 `skills/hao/`。
 - description 保持很窄,只在"拿不准用哪个 skill"或"多个 skill 都适用"时触发,避免像开发 skill 那样对几乎所有任务触发。
 - SKILL.md 只放路由表与跨领域偏好,目标不超过约 2 KB;细节放 `references/`。
 - 路由表记录两类内容:
@@ -70,7 +70,7 @@ skills/
 ## 5. 分步路径
 
 1. **本文**:确认结构与命名。
-2. **加索引 skill**:新增 `personal-skill-index` 与路由表草稿,开发 skill 不动;安装器多链接一个目录;路由取舍由用户确认。
+2. **加主 skill `hao`**:新增 `skills/hao/` 与路由表草稿,开发 skill 不动;安装器多链接一个目录;路由取舍由用户确认。
 3. **按需加领域 skill**:有真实 PPT/Word 任务和偏好素材时再建。
 4. **泛化演进与校验**:出现两个以上领域 skill 后,再调整 manifest 白名单、gate 与校验器,并单独取得授权。
 
@@ -88,6 +88,6 @@ skills/
 
 ## 7. 待用户确认
 
-- 索引 skill 名称是否使用 `personal-skill-index`。
+- ~~索引 skill 名称~~:已确认为 `hao`。
 - 第 2 步路由表中第三方 skill 的优先级取舍。
 - PPT、Word 是否已有可作为素材的过去纠正或成品。
