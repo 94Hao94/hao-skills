@@ -20,7 +20,10 @@ from scripts.dev_spec_contract import (
     gate_command,
     validate_contract,
 )
-from scripts.install_dev_spec_bootstrap import _active_codex_guidance
+from scripts.install_dev_spec_bootstrap import (
+    _active_codex_guidance,
+    package_skill_links,
+)
 
 
 @dataclass(frozen=True)
@@ -75,14 +78,16 @@ def verify_static(
         except (OSError, IndexError, ValueError):
             ok = False
         checks.append(Check(surface + " guidance", ok, str(guidance)))
-        link = directory / "skills/setup-dev-spec-memory"
-        checks.append(
-            Check(
-                surface + " canonical skill link",
-                link.is_symlink() and link.resolve() == root,
-                str(link),
+        for name, target in package_skill_links(root):
+            link = directory / "skills" / name
+            label = " canonical skill link" if target == root else " skill link " + name
+            checks.append(
+                Check(
+                    surface + label,
+                    link.is_symlink() and link.resolve() == target,
+                    str(link),
+                )
             )
-        )
         path = directory / ("hooks.json" if surface == "codex" else "settings.json")
         try:
             payload = json.loads(path.read_text())
