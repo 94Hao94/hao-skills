@@ -9,3 +9,10 @@ __pycache__/
 .evolution/
 artifacts/
 data/
+
+# 本地运行数据与产物
+__pycache__/
+data/
+artifacts/
+.agents/
+skills-lock.json
