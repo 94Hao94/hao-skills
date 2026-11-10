@@ -1,0 +1,6 @@
+interface:
+  display_name: "个人开发执行规范"
+  short_description: "开发启动、实现、验证和交付的个人规范，支持有证据的增量更新"
+  default_prompt: "使用 $setup-dev-spec-memory 核对当前开发任务的启动状态、执行规范和验收要求。"
+policy:
+  allow_implicit_invocation: true

@@ -1,222 +1,48 @@
 ---
 name: setup-dev-spec-memory
-description: 将 AI 开发执行规范安装到 agentmemory 记忆系统，建立三层加载架构。Use when 首次配置开发环境、迁移到新机器、记忆系统重建、或规范更新后需要同步到记忆系统。
-user-invocable: true
+description: 用户专属开发执行规范。只要当前工作与开发有哪怕一点关联就必须调用，包括读取或理解代码、编辑、评审、测试、构建、部署、Git 操作、环境与配置、排错、续接项目；也用于维护本 skill 的启动接入与经过验证的增量改进。判断不清时按相关处理，先调用再决定读取哪些章节。与开发无关的普通问答不调用。
 ---
 
-# 设置开发规范记忆系统
+# 个人开发执行规范
 
-将 AI 开发执行规范存入 agentmemory，建立三层加载架构。
+本 skill 是开发流程的规范来源，服从当前用户要求和宿主更高优先级规则。启动 hook 已加载本核心；详细规范在 [development-spec.md](references/development-spec.md)，按当前任务读取相关章节。旧独立规范文档与记忆 slot 已退出启动链路，不再读取或自动修复它们。
 
-## 三层架构
+## 何时调用
 
-```
-Layer 1: agentmemory ← 主记忆源（规范分章存储）
-Layer 2: CLAUDE.md ← 备用钩子
-Layer 3: ~/AI开发执行规范.md ← 最后托底
-```
+当前工作与开发有任何关联（含只读代码、查看仓库或 Git 状态、改配置、排错、写文档说明、续接项目）就调用本 skill，不等到要改代码才调用；拿不准时按相关处理。调用后只加载与当前任务相关的章节，纯非开发问答不调用，也不展开全部规范。
 
-## 执行步骤
+## 开始开发
 
-### 0. 安装 agentmemory（如未安装）
+在项目读取、修改、启动、评审、测试、构建、部署或 Git 操作前：
 
-```bash
-# 检查是否已安装
-which agentmemory || npm install -g agentmemory
+1. 确认 hook 注入的 skill 版本和完整性；缺失或损坏时先修复本包，不能用旧记忆或外部文档替代。
+2. 核对实际 `pwd`、Git 根、worktree、分支和工作树状态。非 Git 工作区明确记录不适用。
+3. 从当前配置和文档确定标准端口；启动或评审页面前核对监听进程与目标 URL，不默认 main、根仓库、第一个 worktree 或框架默认端口。
+4. 再加载必要的项目记忆，与代码、测试和「说明文档.md」核对。仅有会改变结果的缺失信息、冲突或未授权高影响动作才询问；已有授权的普通工作持续完成。
 
-# 启动服务
-agentmemory start
+## 按宿主使用记忆
 
-# 连接当前智能体（claude-code / cursor / gemini-cli 等）
-agentmemory connect claude-code
+- **Codex**：EP 是全部用户/项目/Agent 经验的查询入口，按需使用 `user_preference`、`user_recall`、`user_research`、`agent_recall`、`agent_research` 及来源工具。agentmemory 仅采集、写入，不做召回后备。
+- EP 调用使用当前 Prompt 的 hook 所给真实 `check_id`；`memory_check` 只能复核已有绑定，不能凭空产生 ID。缺少绑定时报告入口不可用，不编造或借用其他会话 ID，也不把未绑定读取说成完整链路通过。
+- **Claude**：项目记忆继续使用 agentmemory；本 skill 不迁移 Claude 到 EP。
+- 项目事实、原始对话和排错日志存对应记忆系统；skill 保存通用方法，不建立第二套本地文件记忆。来源未验证、工具失败和宿主送达未知时如实报告。
+- 连接修复只在首次安装或配置/服务变化后执行；正常会话不重复 connect/status/doctor。可选 CodeGraph 只提供当前代码结构，失效时用源码/rg/语言工具，不阻塞开发门槛。
 
-# 验证连接
-agentmemory status
-agentmemory doctor
-```
+## 实施与交付
 
-参见 agentmemory-agents skill 获取完整安装指南。
+- 保留无关改动；同任务复用分支，独立任务使用 `<type>/<scope>-<task>`，不加 Agent 前缀。提交/PR 为 `type(scope): description`，主干变更通过 PR。
+- 保留已有集成路线。只有获针对性授权才执行破坏性历史操作、强制推送或生产发布。
+- 按风险完成实现、自审和必要验证，不以声明、重复检查或工具握手代替验收；失败未修复不得报告通过。
+- 维护必要项目说明；交付先说结果，再报告证据、剩余限制及是否提交/推送/合并。
 
-### 1. 检查前置条件
+## 持续改进本 skill
 
-- 规范文件存在：`~/AI开发执行规范.md`
-- agentmemory 服务运行：`agentmemory status`
+遵循 [evolution.md](references/evolution.md)：明确纠正可以在冲突和回归检查后固化；自行总结的经验先做候选，经旧新版对照验证后晋升。单次偶然成功、重复次数和模型自评分不是晋升证据。
 
-### 1.5 版本检查
+每个完成任务最多自动发布一个聚焦改动，保留条件和例外、合并重复规则。发布前必须核对完整包、基线摘要、写锁、独立验收和回滚快照。权限、记忆路由、启动机制、重大流程及演进验证器不能自动放宽；不得因本 skill 而扩大当前任务授权。
 
-比对本地文件版本与记忆系统中的版本：
+## 维护入口
 
-```bash
-# 读取本地文件版本
-grep "规范版本" ~/AI开发执行规范.md
-
-# 查询记忆中的版本
-memory_recall query="AI开发执行规范 规范索引 版本"
-```
-
-- 如果版本一致 → 跳过后续步骤（无需重复同步）
-- 如果版本不一致或记忆中无记录 → 继续执行后续步骤
-
-### 2. 确认同步范围
-
-列出将要更新的章节：
-
-```bash
-# 显示规范章节目录
-grep "^## 第" ~/AI开发执行规范.md
-```
-
-新记忆会自动 supersede 旧记忆，无需手动删除。
-
-### 3. 分章存储（8章）
-
-| 章节 | concepts 标签 |
-|------|---------------|
-| 第一章：AI 行为准则 | AI行为准则,操作确认,透明度,边界意识 |
-| 第二章：文档管理 | 文档管理,说明文档,会话启动 |
-| 第三章：需求分析 | 需求分析,任务规划,ToDoList |
-| 第四章：编码规范 | 编码规范,代码标准,日志规范 |
-| 第五章：质量保证 | 质量保证,自审规范,测试规范 |
-| 第六章：版本控制 | 版本控制,Git提交,分支管理 |
-| 第七章：问题解决 | 问题解决,错误处理,技术排查 |
-| 第八章：汇报同步 | 汇报同步,任务报告,阶段汇总 |
-
-使用 `memory_save`，设置 `type: fact`，`files: ["~/AI开发执行规范.md"]`
-
-**⚠️ 必须传 `project` 参数**（agentmemory 官方规范要求）：
-
-```
-memory_save \
-  content="第一章：AI 行为准则..." \
-  type="fact" \
-  concepts="AI行为准则,操作确认,透明度,边界意识" \
-  files="~/AI开发执行规范.md" \
-  project="setup-dev-spec-memory"   # ← stable canonical project identifier
-```
-
-- `project` 必须是 **stable canonical identifier**（如 slug、UUID），不能用文件路径或临时名称
-- 本项目固定使用 `project="setup-dev-spec-memory"`
-- 参见 agentmemory 官方 MCP tool schema 中 `memory_save` 的 `project` 参数说明
-
-### 4. 创建索引记忆
-
-```
-concepts: [AI开发执行规范, 规范索引, 最高优先级]
-content: 版本信息 + 章节列表 + Memory ID 映射 + 三层架构说明
-```
-
-### 5. 更新 CLAUDE.md 为纯钩子
-
-```markdown
-# Claude Code 配置
-
-## ⚠️ 启动指令
-1. 调用 `memory_recall` 查询记忆
-
-## 三层架构
-Layer 1: agentmemory ← 主记忆源
-Layer 2: 本文件 ← 备用钩子  
-Layer 3: ~/AI开发执行规范.md ← 最后托底
-
-## 禁止事项
-- ❌ 正常情况下禁止读取本地规范文件
-- ❌ 禁止跳过 memory_recall
-```
-
-### 6. 验证
-
-```
-memory_recall query="AI开发执行规范 规范索引"
-```
-
-### 7. 存储多 agent 来源标注规范
-
-agentmemory 数据模型不存储 agentId，无法自动区分哪条记忆是哪个 agent 写入的。
-通过内容前缀实现来源标识。
-
-```
-memory_save \
-  content="【多 agent 来源标注规范】..." \
-  type="preference" \
-  project="setup-dev-spec-memory"
-```
-
-前缀格式：
-- `[Claude]` — Claude Code
-- `[Trae]` — Trae
-- `[Cursor]` — Cursor
-- `[Gemini]` — Gemini CLI
-- `[Copilot]` — GitHub Copilot / Copilot CLI
-- `[Codex]` — OpenAI Codex CLI
-- `[Kiro]` — Kiro
-- `[Warp]` — Warp AI
-- `[Zed]` — Zed AI
-- `[Cline]` — Cline
-- `[Continue]` — Continue
-- `[Qwen]` — Qwen / 通义灵码
-- `[Droid]` — Droid
-- `[Antigravity]` — Antigravity
-- `[Other]` — 其他未列出的 agent
-
-**Memory ID**: 见 REFERENCE.md
-
-### 8. 创建快照
-
-规范同步完成后，创建记忆快照以支持版本追踪和回滚：
-
-```
-memory_snapshot_create message="AI开发执行规范 v1.2 同步完成"
-```
-
-快照用途：
-- 追踪规范的历史变化
-- 记忆损坏时回滚到已知正确的版本
-- diff 查看两次更新之间的变化
-
-## Anti-patterns
-
-**WRONG**: 完整规范存为单个记忆  
-**RIGHT**: 按章节拆分，按需召回
-
-**WRONG**: CLAUDE.md 嵌入规范内容  
-**RIGHT**: CLAUDE.md 只作为钩子
-
-**WRONG**: `memory_save` 不传 `project` 参数  
-**RIGHT**: 必须传 `project`（stable canonical identifier），否则记忆无法按项目隔离
-
-**WRONG**: 闭门造车，分析 minified 源码或猜测 API 行为  
-**RIGHT**: **开发/使用时必须查阅官方文档**（MCP tool schema、GitHub README、官方 wiki），不要逆向工程
-
-## Checklist
-
-- [ ] agentmemory 已安装并运行
-- [ ] agentmemory connect 已执行
-- [ ] 规范文件存在
-- [ ] 版本检查（本地 vs 记忆）
-- [ ] 同步范围已确认
-- [ ] 8 章已分别存储（**每条都带 `project="setup-dev-spec-memory"`**）
-- [ ] 索引记忆已创建（含版本号 + project）
-- [ ] CLAUDE.md 已更新
-- [ ] 多 agent 来源标注规范已存储（带 project）
-- [ ] 快照已创建
-- [ ] 验证通过
-
-## 开发习惯（必读）
-
-> **使用任何工具/框架/服务时，必须先查阅官方文档**，不要分析 minified 源码或猜测 API 行为。
-> 
-> 例如：
-> - 开发小程序 → 查微信小程序官方文档
-> - 使用 agentmemory → 查 agentmemory GitHub README + MCP tool schema
-> - 使用 React → 查 React 官方文档
-> 
-> 官方文档是最权威的来源，minified 源码容易误读，第三方博客可能过时。
-
-## See also
-
-- agentmemory-agents: agentmemory 安装和连接指南
-- agentmemory-config: 配置选项说明
-
-## Reference
-
-完整 Memory ID 映射和查询方式见 REFERENCE.md
+- 核对安装：`python3 scripts/verify_dev_spec_bootstrap.py --home "$HOME" --host both`
+- 安装/修复前预览：`python3 scripts/install_dev_spec_bootstrap.py --home "$HOME" --host both --dry-run`
+- 自进化命令与来源：见 [evolution.md](references/evolution.md)。宿主切换细节见 [codex-memory.md](references/codex-memory.md)。
