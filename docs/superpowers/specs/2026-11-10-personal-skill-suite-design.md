@@ -27,6 +27,8 @@
 
 ## 3. 目标结构
 
+项目(仓库)名为 `hao-skills`;开发 skill 名称与 agentmemory 项目标识保持不变。
+
 采用"一个索引 skill 加若干平级领域 skill":
 
 ```
