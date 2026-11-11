@@ -249,5 +249,34 @@ class CodeGraphBridgeTests(unittest.TestCase):
         self.assertEqual(retry.status, "written")
 
 
+class BridgeMainSecretTests(unittest.TestCase):
+    """The CLI entry point must authenticate against auth-by-default servers."""
+
+    def test_main_resolves_secret_for_agentmemory_url(self):
+        import scripts.codegraph_bridge as bridge
+
+        captured = {}
+
+        def fake_run_bridge(request, config, *, secret=""):
+            captured["secret"] = secret
+            captured["url"] = request.agentmemory_url
+            return bridge.BridgeResult("skipped", "test")
+
+        with mock.patch.object(bridge, "resolve_secret", return_value="from-file") as resolver, \
+                mock.patch.object(bridge, "run_bridge", side_effect=fake_run_bridge), \
+                mock.patch.object(bridge, "resolve_codegraph_binary", return_value=Path("/bin/true")):
+            code = bridge.main([
+                "architecture-decision",
+                "--project-root", str(ROOT),
+                "--agentmemory-url", "http://127.0.0.1:3111",
+                "--cache-dir", tempfile.mkdtemp(),
+                "--decision", "test",
+            ])
+
+        self.assertEqual(code, 0)
+        resolver.assert_called_once_with("http://127.0.0.1:3111")
+        self.assertEqual(captured, {"secret": "from-file", "url": "http://127.0.0.1:3111"})
+
+
 if __name__ == "__main__":
     unittest.main()

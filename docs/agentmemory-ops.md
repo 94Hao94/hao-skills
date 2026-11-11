@@ -96,6 +96,54 @@
 
 现场验证中，摘要接口与原始接口均返回 semantic 3135、procedural 14、relations 0，摘要响应约 21 KB。将完整首页刷新加速到每秒一次并连续执行 15 次时，瞬时峰值为 Node 38.5%、iii 34.1%；停止请求后约 4 秒回落到 Node 0.1%、iii 0.0%，未出现持续高 CPU。部署前文件备份位于 `~/.agentmemory/backups/viewer-zero-count-fix-20260802-012733`。
 
+### 4.7 2026-11-10 升级到 v0.9.33（iii 0.25 / Worker Compose）
+
+**升级前的问题**
+
+- Claude Code 的 MCP 使用 `npx -y @agentmemory/mcp`。每次启动都要到 npm registry 重新校验约 20 个依赖，本机网络下会超过 45 秒，超出 Claude Code 的 30 秒限制，导致 MCP 一直连不上。
+- 官方插件 0.9.27 处于 disabled 状态，12 个采集 hook 都没有运行，Claude Code 会话没有写入记忆。
+
+**升级做了什么**
+
+- 备份位置：`~/.agentmemory/backups/upgrade-0.9.29-to-0.9.33-20261110-090416`。包含 `data/`（APFS 克隆）、`.env`、两个 plist、Claude 配置，以及 iii 0.11.2 二进制。
+- 升级顺序：卸载 watchdog 和 server → `agentmemory stop`（旧 CLI）→ `npm install -g @agentmemory/agentmemory@0.9.33` → 启动 server。首次启动会自动安装 iii 0.25.1。
+- `.env` 新增 `AGENTMEMORY_LLM_PROVIDER=openai`。从 0.9.32 起只认这个变量，旧的 `AGENTMEMORY_PROVIDER` 不再启用 LLM。
+- server plist 的改动：
+  - 删除 `AGENTMEMORY_III_CONFIG`（0.9.31 起不再使用）。
+  - 新增 `AGENTMEMORY_DATA_DIR=/Users/zouhao/data`。
+  - `PATH` 补上 `/usr/sbin:/sbin`。
+  - `KeepAlive` 改为 `{SuccessfulExit: false}`，并设 `ThrottleInterval=30`。
+- Claude Code 这一侧：
+  - 官方插件更新到 0.9.33 并启用。插件的 MCP 改用本地的 `plugin-bridge.mjs`，初始化不到 1 秒。
+  - 删除了 user 级别重复的 npx MCP 配置。
+- 图谱索引：运行了 `agentmemory graph-index migrate --allow-legacy-scan`，要处理约 20 万条旧记录，速度约每分钟 900 条，在后台进行。中断后用 `agentmemory graph-index resume --allow-legacy-scan` 续跑。
+
+**新架构下的运维要点**
+
+- CLI 只负责启动或接管后台的 `iii compose` daemon，完成后以退出码 0 结束，不再常驻。launchd 任务处于 "not running / exit 0" 是正常状态，此时进程树是 `iii compose` 下挂着 engine、http、state 和 `node dist/index.mjs`。
+- CLI 会用 `/usr/sbin/lsof` 校验 compose daemon 的身份。plist 的 PATH 里缺少 `/usr/sbin` 时，CLI 每次重入都会报 "process identity does not match" 并以退出码 1 结束，配合 `KeepAlive=true` 就会无限重启。
+- 默认开启认证。secret 位于 `~/.agentmemory/secret`（权限 0600）。`/agentmemory/livez` 无需认证，`/agentmemory/health` 和其他接口需要 `Authorization: Bearer`。
+  - `codex_agentmemory_capture.py` 和 `codegraph_bridge.py` 都通过 `resolve_secret` 读取 secret，顺序为环境变量 → `.env` → secret 文件，只对 loopback 地址生效。
+- watchdog 改为探测 `/livez`。失败时先调用官方 `agentmemory stop`（不加 `--force`，由官方 CLI 负责校验身份、拒绝处理外来进程），再对 server 任务执行 `launchctl kickstart -k`；任务未加载时执行 bootstrap。2026-11-10 做过真实停机演练，约 9 秒恢复。
+- 3112 端口不再使用。Viewer 实时更新改走 3111 上带认证的 SSE。
+- 统计口径：新版会过滤缺少 `id` 的会话记录，sessions 从 981 变为 926，observations 从 30111 变为 30100。`mem:sessions.bin` 与备份逐字节相同，没有数据丢失。
+
+**补丁状态**
+
+- 第 2 节列出的四个 `patch_agentmemory_*.py` 只适用于 v0.9.28/0.9.29。在 v0.9.33 上执行 `--check` 会报 layout 不兼容，这是预期结果，不要强行套用。
+- 上游已提供等价能力：
+  - 健康检查按 `heapLimit` 计算内存压力。
+  - `/sessions` 支持 `limit` 和游标分页。
+  - Viewer 改为单个 `viewer/snapshot` 接口加按标签页懒加载，并对进行中的请求去重。
+- `AGENTMEMORY_VIEWER_ENABLED` 不再生效，Viewer 默认开启。
+
+**回滚**
+
+1. 卸载 watchdog 和 server，执行 `agentmemory stop`。
+2. `npm install -g @agentmemory/agentmemory@0.9.29`。
+3. 从备份恢复 `data/`、`.env`、两个 plist 和 `~/.agentmemory/bin/iii`。
+4. 重新 bootstrap server 和 watchdog。
+
 ## 5. 运维与回滚
 
 常规验证：

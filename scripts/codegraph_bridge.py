@@ -42,6 +42,7 @@ from scripts.install_codegraph_runtime import (  # noqa: E402
     Runner,
     run_command,
 )
+from scripts.codex_agentmemory_capture import resolve_secret  # noqa: E402
 
 
 STATE_SCHEMA = "codegraph-bridge-state/v1"
@@ -693,7 +694,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     result = run_bridge(
         request,
         config,
-        secret=os.environ.get("AGENTMEMORY_SECRET", ""),
+        # agentmemory >=0.9.30 enables auth by default; resolve like the official
+        # clients (env, ~/.agentmemory/.env, generated secret; loopback only).
+        secret=resolve_secret(args.agentmemory_url),
     )
     print(json.dumps({"status": result.status, "reason": result.reason}, sort_keys=True))
     return 0
